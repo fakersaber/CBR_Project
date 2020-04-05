@@ -352,7 +352,11 @@ FRHITexture* FOpenGLDynamicRHI::CreateOpenGLRHITextureOnly(const uint32 SizeX, c
 	else
 	{
 		Target =  (NumSamples > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
-
+#if PLATFORM_ANDROID && !PLATFORM_LUMINGL4	
+		static const auto CVarCBR = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.MobileCBR"));
+		bool const bEnableCBR = CVarCBR->GetValueOnRenderThread() && NumSamplesTileMem == 2;
+		Target = bEnableCBR ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
+#endif
 		// @todo: refactor 2d texture array support here?
 		check(!bArrayTexture);
 	}

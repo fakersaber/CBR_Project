@@ -772,7 +772,7 @@ void FMobileSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 			RHICmdList,
 			View.GetFeatureLevel(),
 			View,
-			static_cast<float>(SceneContext.CBRIndex),
+			SceneContext.CBRIndex,
 			512.f,
 			flag,
 			SceneContext.CheckerBoardRenderTarget[0]->GetRenderTargetItem().TargetableTexture,

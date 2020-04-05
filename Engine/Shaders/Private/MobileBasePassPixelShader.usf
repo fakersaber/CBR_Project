@@ -3,9 +3,9 @@
 /*=============================================================================
 	MobileBasePassPixelShader.usf: Base pass pixel shader used with forward shading
 =============================================================================*/
-#define USE_CHECKBOARD_DX_RENDER 1
+#define USE_CHECKBOARD_DX_RENDER 0
 
-#define USE_CHECKBOARD_Vulkan_RENDER 0
+#define USE_CHECKBOARD_Vulkan_RENDER 1
 
 #include "Common.ush"
 
