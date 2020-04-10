@@ -81,6 +81,13 @@ static TAutoConsoleVariable<int32> CVarMobileCBR(
 	,
 	ECVF_RenderThreadSafe);
 
+//因为ViewInfo都是储存带抖动的Matrix，所以这里单独存一份
+static FMatrix CurViewProj = FMatrix::Identity;
+static FMatrix LastViewProj = FMatrix::Identity;
+//static FMatrix PreInvViewProj = FMatrix::Identity;
+
+
+
 DECLARE_GPU_STAT_NAMED(MobileSceneRender, TEXT("Mobile Scene Render"));
 
 DECLARE_CYCLE_STAT(TEXT("SceneStart"), STAT_CLMM_SceneStart, STATGROUP_CommandListMarkers);
@@ -256,6 +263,10 @@ void FMobileSceneRenderer::InitViews(FRHICommandListImmediate& RHICmdList)
 	if (CVarMobileCBR.GetValueOnRenderThread() == 1) {
 		FSceneRenderTargets& SceneContext = FSceneRenderTargets::Get(RHICmdList);
 		SceneContext.CBRIndex = (ViewFamily.FrameNumber - 1) & 0x1;
+
+
+		CurViewProj = Views[0].ViewMatrices.GetViewProjectionMatrix();
+
 		Views[0].ViewMatrices.HackCBRProjectionJitter(SceneContext.CBRIndex, Views[0].ViewRect.Width());
 	}
 	//YJH End
@@ -763,26 +774,33 @@ void FMobileSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
 
 		RHICmdList.BeginComputePass(TEXT("Reconstruction checkerboard"));
 
-		uint32 flag = 0ul;
-
 		RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.CheckerBoardRenderTarget[0]->GetRenderTargetItem().TargetableTexture);
 		RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, SceneContext.CheckerBoardRenderTarget[1]->GetRenderTargetItem().TargetableTexture);
 
-		RenderCBR_ColoResolve(
+
+		FCBRColorBufferData ConstBuffer;
+
+		ConstBuffer.FrameOffset = SceneContext.CBRIndex;
+		ConstBuffer.DepthTolerance = 512.f;
+		ConstBuffer.MotionVector = CurViewProj.Equals(LastViewProj);
+		const auto Rect = SceneContext.GetBufferSizeXY();
+		ConstBuffer.width = static_cast<float>(Rect.X);
+		ConstBuffer.height = static_cast<float>(Rect.Y);
+		ConstBuffer.LinearZTransform = FVector::ZeroVector;
+		RenderCBR_ColorResolve(
 			RHICmdList,
 			View.GetFeatureLevel(),
-			View,
-			SceneContext.CBRIndex,
-			512.f,
-			flag,
 			SceneContext.CheckerBoardRenderTarget[0]->GetRenderTargetItem().TargetableTexture,
 			SceneContext.CheckerBoardRenderTarget[1]->GetRenderTargetItem().TargetableTexture,
 			SceneContext.CheckerBoardDepth[0]->GetRenderTargetItem().TargetableTexture,
 			SceneContext.CheckerBoardDepth[1]->GetRenderTargetItem().TargetableTexture,
-			OriginSceneColorRT
+			OriginSceneColorRT,
+			ConstBuffer
 		);
 
 		RHICmdList.EndComputePass();
+
+		LastViewProj = CurViewProj;
 	}
 	//YJH End
 

@@ -15,13 +15,17 @@
 #define CBR_GROUP_THREAD_COUNTS 8
 
 BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FCBRColorBuffer, )
-SHADER_PARAMETER(float, FrameOffset)
+SHADER_PARAMETER(int32, FrameOffset)
 SHADER_PARAMETER(float, DepthTolerance)
-SHADER_PARAMETER(uint32, Flags)
-SHADER_PARAMETER(float, Pad)
+SHADER_PARAMETER(uint32, MotionVector)
+SHADER_PARAMETER(float, width)
+SHADER_PARAMETER(float, height)
+SHADER_PARAMETER(uint32, pad_0)
+SHADER_PARAMETER(uint32, pad_1)
+SHADER_PARAMETER(uint32, pad_2)
 SHADER_PARAMETER(FVector4, LinearZTransform)
-SHADER_PARAMETER(FMatrix, CurViewProj)
-SHADER_PARAMETER(FMatrix, PreInvViewProj)
+//SHADER_PARAMETER(FMatrix, CurViewProj)
+//SHADER_PARAMETER(FMatrix, PreInvViewProj)
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FCBRColorBuffer, "CBRColorBuffer");
@@ -76,12 +80,16 @@ public:
 		SetTextureParameter(RHICmdList, GetComputeShader(), DownSizedInDepth2x1, InDownSizedInDepth2x1);
 
 		FCBRColorBuffer RenderData;
-		RenderData.FrameOffset = CbrData.FrameOffset;
-		RenderData.DepthTolerance = CbrData.DepthTolerance;
-		RenderData.Flags = CbrData.Flags;
-		RenderData.LinearZTransform = CbrData.LinearZTransform;
-		RenderData.CurViewProj = CbrData.CurViewProj;
-		RenderData.PreInvViewProj = CbrData.PreInvViewProj;
+		FMemory::Memcpy(&RenderData, &CbrData,sizeof(FCBRColorBufferData));
+
+		//RenderData.FrameOffset = CbrData.FrameOffset;
+		//RenderData.DepthTolerance = CbrData.DepthTolerance;
+		//RenderData.Flags = CbrData.Flags;
+		//RenderData.width = CbrData.
+		//RenderData.LinearZTransform = CbrData.LinearZTransform;
+		//RenderData.CurViewProj = CbrData.CurViewProj;
+		//RenderData.PreInvViewProj = CbrData.PreInvViewProj;
+
 		SetUniformBufferParameter(RHICmdList, 
 			GetComputeShader(), 
 			GetUniformBufferParameter<FCBRColorBuffer>(), 
@@ -101,7 +109,6 @@ public:
 		Ar << DownSizedInColor2x1;
 		Ar << DownSizedInDepth2x0;
 		Ar << DownSizedInDepth2x1;
-		//Ar << TextureSampler;
 		Ar << OutColor;
 		return bShaderHasOutdatedParameters;
 	}
@@ -111,48 +118,29 @@ private:
 	FShaderResourceParameter DownSizedInColor2x1;
 	FShaderResourceParameter DownSizedInDepth2x0;
 	FShaderResourceParameter DownSizedInDepth2x1;
-	//FShaderResourceParameter TextureSampler;
 	FShaderResourceParameter OutColor;
 };
 
 IMPLEMENT_SHADER_TYPE(, FCheckboardColorResolveCS, TEXT("/Engine/Private/CheckboardResolveCS.usf"), TEXT("main"), SF_Compute)
 
-void RenderCBR_ColoResolve(
+void RenderCBR_ColorResolve(
 	FRHICommandListImmediate& RHICmdList,
 	ERHIFeatureLevel::Type FeatureLevel,
-	FViewInfo& ViewInfo,
-	float FrameOffset,
-	float DepthTolerance,
-	uint32 Flags,
 	FRHITexture* InDownSizedInColor2x0,
 	FRHITexture* InDownSizedInColor2x1,
 	FRHITexture* InDownSizedInDepth2x0,
 	FRHITexture* InDownSizedInDepth2x1,
-	const TRefCountPtr<IPooledRenderTarget>& OutputTarget)
-
+	const TRefCountPtr<IPooledRenderTarget>& OutputTarget,
+	const FCBRColorBufferData& ConstBuffer
+)
 {
 	check(IsInRenderingThread());
-
-	FCBRColorBufferData CBRBuffer;
-	CBRBuffer.FrameOffset = FrameOffset;
-	CBRBuffer.DepthTolerance = DepthTolerance;
-	CBRBuffer.Flags = Flags;
-
-	const FMatrix& InvViewProj = ViewInfo.ViewMatrices.GetInvViewProjectionMatrix();
-
-	CBRBuffer.LinearZTransform.X = InvViewProj.M[2][2];
-	CBRBuffer.LinearZTransform.Y = InvViewProj.M[3][2];
-	CBRBuffer.LinearZTransform.Z = InvViewProj.M[2][3];
-	CBRBuffer.LinearZTransform.W = InvViewProj.M[3][3];
-
-	CBRBuffer.CurViewProj = ViewInfo.ViewMatrices.GetViewProjectionMatrix();
-	CBRBuffer.PreInvViewProj = ViewInfo.PrevViewInfo.ViewMatrices.GetInvViewProjectionMatrix();
 
 	TShaderMapRef<FCheckboardColorResolveCS> CheckboardColorResolveCS(GetGlobalShaderMap(FeatureLevel));
 
 	RHICmdList.SetComputeShader(CheckboardColorResolveCS->GetComputeShader());
 
-	CheckboardColorResolveCS->SetParameters(RHICmdList, CBRBuffer, InDownSizedInColor2x0, InDownSizedInColor2x1, InDownSizedInDepth2x0, InDownSizedInDepth2x1, OutputTarget->GetRenderTargetItem().UAV);
+	CheckboardColorResolveCS->SetParameters(RHICmdList, ConstBuffer, InDownSizedInColor2x0, InDownSizedInColor2x1, InDownSizedInDepth2x0, InDownSizedInDepth2x1, OutputTarget->GetRenderTargetItem().UAV);
 
 	DispatchComputeShader(
 		RHICmdList,

@@ -2,8 +2,10 @@
 
 Texture2DMS<float4> DownSizedInColor2x0;
 Texture2DMS<float4> DownSizedInColor2x1;
+
 Texture2DMS<float> DownSizedInDepth2x0;
 Texture2DMS<float> DownSizedInDepth2x1;
+
 RWTexture2D<float4> OutColor;
 
 #define Up		0
@@ -11,110 +13,99 @@ RWTexture2D<float4> OutColor;
 #define Left	2
 #define Right	3
 
-int GetLoadIndex(int quadrant)
-{
-	const int loadIndex_lookup[4] = {1, 1, 0, 0 };
-	return loadIndex_lookup[quadrant];
+
+void getCardinalOffsets(int quadrant, out int2 offsets[4], out int quadrants[2])
+{	
+	quadrants[0] = 0;
+	quadrants[1] = 0;
+	
+	quadrants[0] = quadrant == int(0) ? int(2) : quadrants[0];
+	quadrants[1] = quadrant == int(0) ? int(1) : quadrants[1];
+	
+	quadrants[0] = quadrant == int(1) ? int(3) : quadrants[0];
+	quadrants[1] = quadrant == int(1) ? int(0) : quadrants[1];
+	
+	quadrants[0] = quadrant == int(2) ? int(0) : quadrants[0];
+	quadrants[1] = quadrant == int(2) ? int(3) : quadrants[1];
+	
+	quadrants[0] = quadrant == int(3) ? int(1) : quadrants[0];
+	quadrants[1] = quadrant == int(3) ? int(2) : quadrants[1];
+	
+	
+	offsets[Up] = int2(0, 0);
+	offsets[Up] = quadrant == 0 ? -int2(0, -1) : offsets[Up];
+	offsets[Up] = quadrant == 1 ? -int2(0, -1) : offsets[Up];
+
+	offsets[Down] = int2(0, 0);
+	offsets[Down] = quadrant == 2 ? int2(0, 1) : offsets[Down];
+	offsets[Down] = quadrant == 3 ? int2(0, 1) : offsets[Down];
+	
+	offsets[Left] = int2(0, 0);
+	offsets[Left] = quadrant == 0 ? -int2(-1, 0) : offsets[Left];
+	offsets[Left] = quadrant == 2 ? -int2(-1, 0) : offsets[Left];
+
+	offsets[Right] = int2(0, 0);
+	offsets[Right] = quadrant == 1 ? int2(1, 0) : offsets[Right];
+	offsets[Right] = quadrant == 3 ? int2(1, 0) : offsets[Right];
 }
 
-int2 GetPixOffset(int quadrant)
-{
-	const int PixOffset_lookup[4] = { 0, 1, 0, 0 };
-	return int2(PixOffset_lookup[quadrant], 0);
-}
 
 float4 readFromQuadrant(int2 pixel, int quadrant)
 {
 	float4 Color = float4(0.f,0.f,0.f,0.f);
 	
 	Color = quadrant == 0 ? DownSizedInColor2x0.Load(pixel, 1) : Color;
+	
 	Color = quadrant == 1 ? DownSizedInColor2x1.Load(pixel + int2(1, 0), 1) : Color;
+	
 	Color = quadrant == 2 ? DownSizedInColor2x1.Load(pixel, 0) : Color;
+	
 	Color = quadrant == 3 ? DownSizedInColor2x0.Load(pixel, 0) : Color;
 	
 	return Color;
 }
 
-float readDepthFromQuadrant(int2 pixel, int quadrant)
+float3 hdrColorBlend(float3 a, float3 b, float3 c, float3 d)
 {
-	float depth = 0.f;
-	depth = quadrant == 0 ? DownSizedInDepth2x0.Load(pixel, 1) : depth;
-	depth = quadrant == 1 ? DownSizedInDepth2x1.Load(pixel + int2(1, 0), 1) : depth;
-	depth = quadrant == 2 ? DownSizedInDepth2x1.Load(pixel, 0) : depth;
-	depth = quadrant == 3 ? DownSizedInDepth2x0.Load(pixel, 0) : depth;
-	
-	return depth;
+    // Reinhard 
+	float3 t_a = a / (a + 1);
+	float3 t_b = b / (b + 1);
+	float3 t_c = c / (c + 1);
+	float3 t_d = d / (d + 1);
+
+	float3 color = (t_a + t_b + t_c + t_d) * float(0.25f);
+
+    // back to hdr
+	return -color / (color - 1);
 }
 
-//求出第N-1帧的pixelpos的worldpos再变换到第N帧的pixelpos从而计算出motion vector
-//pixel + 0.5f is to place to the center position
-uint2 previousPixelPos(float2 pixel, float depth, float2 AllRes)
-{
-	if (depth <= 0.0)
-		return floor(pixel);
-	
-	uint2 NeedSamplePix = floor(pixel);
-	
-	pixel.y = AllRes.y - 1.f - pixel.y;
-
-	float2 XY_NDC = pixel / AllRes * 2.f - 1.f;
-	float4 CurNDC_Pos = float4(XY_NDC.x, XY_NDC.y, depth, 1.f);
-	
-	float4 World_PrePos = mul(CurNDC_Pos, CBRColorBuffer.PreInvViewProj);
-	World_PrePos /= World_PrePos.w;
-	
-	float4 CurrentNDC_PrePos = mul(World_PrePos, CBRColorBuffer.CurViewProj);
-	CurrentNDC_PrePos /= CurrentNDC_PrePos.w;
-	
-	float2 cur_PrePixel = CurrentNDC_PrePos.xy * AllRes * 0.5f + AllRes * 0.5f;
-	cur_PrePixel.y = AllRes.y - 1.f - cur_PrePixel.y;
-
-	//motionvector是从N-1到N的运动向量，而NeedSamplePix是第N帧的POS,从第N帧求出N-1帧正确的采样位置
-	int2 motionvector = floor(cur_PrePixel) - NeedSamplePix;
-	
-	uint2 NewSamplePix = NeedSamplePix - motionvector;
-	
-	return NewSamplePix;
-}
 
 float4 Resolve2xSampleTemporal(int FrameOffset, uint2 dispatchThreadId)
 {
 	const int quadrant = int(dispatchThreadId.y & 0x1) * 2 + int(dispatchThreadId.x & 0x1);
-	
 	const int2 qtr_res_pixel = floor(dispatchThreadId.xy * 0.5f);
 	
-	const int frame_lookup[2][2] ={
-		{ 0, 3 },
-		{ 1, 2 }
-	};
+	const int SampleIndex[4] = { 0, 1, 1, 0 };
+	int2 cardinal_offsets[4];
+	int cardinal_quadrants[2];
 	
-
-	int frame_quadrants[2];
-	frame_quadrants[0] = frame_lookup[FrameOffset][0];
-	frame_quadrants[1] = frame_lookup[FrameOffset][1];
+	float lerpScale = (SampleIndex[quadrant] == FrameOffset || CBRColorBuffer.MotionVector == 1) ? float(1.f) : float(0.f);
 	
-	float4 Color = float4(0.f, 0.f, 0.f, 0.f);
+	float4 Color_0 = readFromQuadrant(qtr_res_pixel, quadrant);
 	
-	//除非接入TextureArray，不然无法优化
-	if (frame_quadrants[0] == quadrant || frame_quadrants[1] == quadrant)
-		Color = readFromQuadrant(qtr_res_pixel, quadrant);
-	else
-	{
-		uint2 full_res;
-		
-		OutColor.GetDimensions(full_res.x, full_res.y);
-		
-		float depth = readDepthFromQuadrant(qtr_res_pixel, quadrant);
-		
-		uint2 preSamplePos = previousPixelPos(dispatchThreadId.xy + 0.5f, depth, full_res);
-
-		int2 QPreSamplePos = floor(preSamplePos * 0.5f);
-		
-		int quadrant_needed = int(preSamplePos.x & 0x1) + int(preSamplePos.y & 0x1) * 2;
-		
-		Color = readFromQuadrant(QPreSamplePos, quadrant_needed);
+	getCardinalOffsets(quadrant, cardinal_offsets, cardinal_quadrants);
+	float4 color[4];
+	color[Up] = readFromQuadrant(qtr_res_pixel + cardinal_offsets[Up], cardinal_quadrants[0]);
+	color[Down] = readFromQuadrant(qtr_res_pixel + cardinal_offsets[Down], cardinal_quadrants[0]);
+	color[Left] = readFromQuadrant(qtr_res_pixel + cardinal_offsets[Left], cardinal_quadrants[1]);
+	color[Right] = readFromQuadrant(qtr_res_pixel + cardinal_offsets[Right], cardinal_quadrants[1]);
 	
-	}
+	float4 Color_1 = float4(hdrColorBlend(color[Up].rgb, color[Down].rgb, color[Left].rgb, color[Right].rgb), 1);
+	
+	Color_1 = Color_1 - Color_1 * lerpScale;
+	
+	float4 Color = Color_0 + Color_1;
+	
 	return Color;
 }
 

@@ -4,33 +4,37 @@
 #include "RHIResources.h"
 
 struct FCBRColorBufferData{
-	float FrameOffset;
+	uint32 FrameOffset;
 	
 	float DepthTolerance;
 
-	uint32 Flags;
+	uint32 MotionVector;
+
+	float width;
+
+	float height;
+
+	int pad[3];
 
 	FVector4 LinearZTransform;
 
-	FMatrix CurViewProj;
+	//FMatrix CurViewProj;
 
-	FMatrix PreInvViewProj;
+	//FMatrix PreInvViewProj;
 };
 
 
 
-void RenderCBR_ColoResolve(
+void RenderCBR_ColorResolve(
 	FRHICommandListImmediate& RHICmdList,
 	ERHIFeatureLevel::Type FeatureLevel,
-	FViewInfo& ViewInfo,
-	float FrameOffset,
-	float DepthTolerance,
-	uint32 Flags,
 	FRHITexture* InDownSizedInColor2x0,
 	FRHITexture* InDownSizedInColor2x1,
 	FRHITexture* InDownSizedInDepth2x0,
 	FRHITexture* InDownSizedInDepth2x1,
-	const TRefCountPtr<IPooledRenderTarget>& OutputTarget);
+	const TRefCountPtr<IPooledRenderTarget>& OutputTarget,
+	const FCBRColorBufferData& ConstBuffer
+);
 
 void RenderCBR_DepthResolve(
 	FRHICommandListImmediate& RHICmdList,
