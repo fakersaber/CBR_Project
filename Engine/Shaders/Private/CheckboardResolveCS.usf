@@ -91,7 +91,7 @@ float4 Resolve2xSampleTemporal(int FrameOffset, uint2 dispatchThreadId)
 	
 	float lerpScale = (SampleIndex[quadrant] == FrameOffset || CBRColorBuffer.MotionVector == 1) ? float(1.f) : float(0.f);
 	
-	float4 Color_0 = readFromQuadrant(qtr_res_pixel, quadrant);
+    float4 Color_0 = readFromQuadrant(qtr_res_pixel, quadrant) * lerpScale;
 	
 	getCardinalOffsets(quadrant, cardinal_offsets, cardinal_quadrants);
 	float4 color[4];
