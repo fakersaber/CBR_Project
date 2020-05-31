@@ -150,6 +150,7 @@ void RenderCBR_ColorResolve(
 		1ul);
 
 	CheckboardColorResolveCS->UnbindUAV(RHICmdList);
+	RHICmdList.TransitionResource(EResourceTransitionAccess::EReadable, EResourceTransitionPipeline::EComputeToGfx, OutputTarget->GetRenderTargetItem().UAV);
 }
 
 //////////////////////////////////////////////////////////////
